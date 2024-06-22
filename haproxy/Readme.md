@@ -1,25 +1,24 @@
-## HAProxy Docker image
+## HAProxy Docker image with Dynamic Host-resolver
 
-This image is generic and can be used on other projects. This version is based on the initial work provided
-of this image: [hub.docker.com/r/eecms/haproxy](https://hub.docker.com/r/eeacms/haproxy)
+This image is generic and can be used on other projects. This version is based on the initial work provided of this image: [hub.docker.com/r/eecms/haproxy](https://hub.docker.com/r/eeacms/haproxy)
 
  - Debian: **Bookworm**
  - HAProxy: **3.0**
  
 ### Supported tags and respective Dockerfile links
 
-  - `:latest` [*Dockerfile*](https://github.com/mapgear/oss-haproxy-dns/blob/master/haproxy/Dockerfile) - Debian: **Bookworm**, HAProxy: **3.0**
+  - `:latest` [*Dockerfile*](https://github.com/mapgear/docker.haproxy/blob/master/haproxy/Dockerfile) - Debian: **Bookworm**, HAProxy: **3.0**
 
 ### Stable and immutable tags
 
-  - `:3.0` [*Dockerfile*](https://github.com/mapgear/oss-haproxy-dns/tree/3.0/haproxy/Dockerfile) - HAProxy: **3.0** Release: **3.0**
+  - `:3.0` [*Dockerfile*](https://github.com/mapgear/docker.haproxy/tree/3.0/haproxy/Dockerfile) - HAProxy: **3.0** Release: **3.0**
 
 
-See [all versions](https://github.com/mapgear/oss-haproxy-dns/releases)
+See [all versions](https://github.com/mapgear/docker.haproxy/releases)
 
 ### Changes
 
- - [CHANGELOG.md](https://github.com/mapgear/oss-haproxy-dns/blob/master/CHANGELOG.md)
+ - [CHANGELOG.md](https://github.com/mapgear/docker.haproxy/blob/master/CHANGELOG.md)
 
 ### Source code
 
@@ -28,15 +27,14 @@ See [all versions](https://github.com/mapgear/oss-haproxy-dns/releases)
 
 ## Usage
 
-
 ### Run with Docker Compose
 
-Here is a basic example of a `docker-compose.yml` file using the `eeacms/haproxy` docker image:
+Here is a basic example of a `docker-compose.yml` file using the `mapgear/docker.haproxy` docker image:
 
     version: "2"
     services:
       haproxy:
-        image: mapgear/haproxy-dns
+        image: mapgear/docker.haproxy
         depends_on:
         - nginx
         ports:
@@ -54,7 +52,7 @@ Here is a basic example of a `docker-compose.yml` file using the `eeacms/haproxy
 
 The application can be scaled to use more server instances, with `docker-compose scale`:
 
-    $ docker-compose up -d --scale webapp=4
+    $ docker-compose up -d --scale nginx=4
 
 The results can be checked in a browser, navigating to http://localhost.
 By refresing the page multiple times it is noticeable that the IP of the server
@@ -65,16 +63,14 @@ using the `STATS_AUTH` authentication details (default `admin:admin`).
 Note that it may take **up to one minute** until backends are plugged-in due to the
 minimum possible `DNS_TTL`.
 
-
 ### Use a custom configuration file mounted as a volume
 
-    $ docker run -v conf.d/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg eeacms/haproxy:latest
+    $ docker run -v conf.d/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg mapgear/docker.haproxy:latest
 
 
 If you edit `haproxy.cfg` you can reload it without having to restart the container:
 
     $ docker exec <name-of-your-container> reload
-
 
 
 ## Supported environment variables ##
@@ -154,16 +150,8 @@ Now make sure that `logs.example.com` listen on UDP port `5005`
 
 ## Copyright and license
 
-The Initial Owner of the Original Code is European Environment Agency (EEA).
-All Rights Reserved.
+The Initial Owner of the Original Code is European Environment Agency (EEA). Check https://github.com/eea/eea.docker.haproxy for the original version.
 
-The Original Code is free software;
-you can redistribute it and/or modify it under the terms of the GNU
-General Public License as published by the Free Software Foundation;
-either version 2 of the License, or (at your option) any later
-version.
+The modifications and code changes are provided for free by MapGear B.V. (NL) but are provided as free software.
 
-
-## Funding
-
-[European Environment Agency (EU)](http://eea.europa.eu)
+The Original Code is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License v3 as published by the Free Software.
