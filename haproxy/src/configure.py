@@ -1,6 +1,4 @@
 import os
-import socket
-import sys
 from string import Template
 import subprocess
 
@@ -8,49 +6,51 @@ import subprocess
 # INIT
 ################################################################################
 
-FRONTEND_NAME = os.environ.get('FRONTEND_NAME', 'http-frontend')
-FRONTEND_PORT = os.environ.get('FRONTEND_PORT', '5000')
-FRONTEND_MODE = os.environ.get('FRONTEND_MODE', os.environ.get('BACKENDS_MODE','http'))
-BACKEND_NAME = os.environ.get('BACKEND_NAME', 'http-backend')
-BALANCE = os.environ.get('BALANCE', 'roundrobin')
-SERVICE_NAMES = os.environ.get('SERVICE_NAMES', '')
 COOKIES_ENABLED = (os.environ.get('COOKIES_ENABLED', 'false').lower() == "true")
 COOKIES_NAME = os.environ.get('COOKIES_NAME','SRV_ID')
 COOKIES_PARAMS = os.environ.get('COOKIES_PARAMS','')
 PROXY_PROTOCOL_ENABLED = (os.environ.get('PROXY_PROTOCOL_ENABLED', 'false').lower() == "true")
 STATS_PORT = os.environ.get('STATS_PORT', '1936')
 STATS_AUTH = os.environ.get('STATS_AUTH', 'admin:admin')
-BACKENDS = os.environ.get('BACKENDS', '').split(' ')
-BACKENDS_PORT = os.environ.get('BACKENDS_PORT', '80')
-BACKENDS_MODE = os.environ.get('BACKENDS_MODE', FRONTEND_MODE)
 LOGGING = os.environ.get('LOGGING', '127.0.0.1')
 LOG_LEVEL = os.environ.get('LOG_LEVEL', 'notice')
 TIMEOUT_CONNECT = os.environ.get('TIMEOUT_CONNECT', '5000')
 TIMEOUT_CLIENT = os.environ.get('TIMEOUT_CLIENT', '50000')
 TIMEOUT_SERVER = os.environ.get('TIMEOUT_SERVER', '50000')
-HTTPCHK = os.environ.get('HTTPCHK', 'HEAD /')
+
+# Read these variables, as these are the defaults for others
+FRONTEND_POOLS = int(os.environ.get("FRONTEND_POOLS", 1))
+BACKEND_MODE = os.environ.get("BACKEND_MODE", "http")
+
+# Frontend variables
+FRONTEND_MODE = os.environ.get("FRONTEND_MODE", BACKEND_MODE)
+
+# Backend variables
+BACKEND_POOLS = int(os.environ.get("BACKEND_POOLS", FRONTEND_POOLS))
+BACKEND_PORT = os.environ.get("BACKEND_PORT", "5000")
+BACKEND_BALANCE = os.environ.get('BACKEND_BALANCE', 'roundrobin')
+BACKEND_DEFAULT_SERVER = os.environ.get("BACKEND_DEFAULT_SERVER", "inter 2s fastinter 2s downinter 2s fall 3 rise 2")
+
+# Backend Http checks
+HTTPCHK_METHOD = os.environ.get('HTTPCHK_METHOD', 'HEAD')
+HTTPCHK_URI = os.environ.get('HTTPCHK_URI', '/')
 HTTPCHK_HOST = os.environ.get('HTTPCHK_HOST', 'localhost')
-INTER = os.environ.get('INTER', '2s')
-FAST_INTER = os.environ.get('FAST_INTER', INTER)
-DOWN_INTER = os.environ.get('DOWN_INTER', INTER)
-RISE = os.environ.get('RISE', '2')
-FALL = os.environ.get('FALL', '3')
 
-
+# Generate config
 listen_conf = Template("""
-  listen stats
-    bind *:$port
-    stats enable
-    stats uri /
-    stats hide-version
-    stats auth $auth
+listen stats
+  bind *:$port
+  stats enable
+  stats uri /
+  stats hide-version
+  stats auth $auth
 """)
 
 frontend_conf = Template("""
-  frontend $name
-    bind *:$port $accept_proxy
-    mode $mode
-    default_backend $backend
+frontend $name
+  bind *:$port $accept_proxy
+  mode $mode
+  default_backend $backend
 """)
 
 if COOKIES_ENABLED:
@@ -58,168 +58,48 @@ if COOKIES_ENABLED:
     #then insert a cookie named $COOKIES_NAME(SRV_ID) to the request:
     #all responses from HAProxy to the client will contain a Set-Cookie:
     #header with a specific value for each backend server as its cookie value.
-    backend_conf = Template("""
-  backend $backend
-    mode $mode
-    balance $balance
-    default-server inter $inter fastinter $fastinter downinter $downinter fall $fall rise $rise
-    cookie $cookies_name insert $cookies_params
+    base_backend_conf = Template(f"""
+backend $backend
+  mode $mode
+  balance $balance
+  default-server $default_server
+  cookie $cookies_name insert $cookies_params
 """)
     cookies = "cookie \\\"@@value@@\\\""
 else:
-    #the old template and behaviour for backward compatibility
-    #in this case the cookie will not be set - see below the value for
-    #cookies variable (is set to empty)
-    backend_conf = Template("""
-  backend $backend
-    mode $mode
-    balance $balance
-    default-server inter $inter fastinter $fastinter downinter $downinter fall $fall rise $rise
-    cookie $cookies_name prefix $cookies_params
+    # The old template and behaviour for backward compatibility
+    # in this case the cookie will not be set - see below the value for
+    # cookies variable (is set to empty)
+    base_backend_conf = Template(f"""
+backend $backend
+  mode $mode
+  balance $balance
+  default-server $default_server
+  cookie $cookies_name prefix $cookies_params
 """)
     cookies = ""
 
 backend_type_http = Template("""
-    option forwardfor
-    http-request set-header X-Forwarded-Port %[dst_port]
-    http-request add-header X-Forwarded-Proto https if { ssl_fc }
-    option httpchk $httpchk HTTP/1.1\\r\\nHost:$httpchk_host
+  option forwardfor
+  http-request set-header X-Forwarded-Port %[dst_port]
+  http-request add-header X-Forwarded-Proto https if { ssl_fc }
+                             
+  option httpchk
+  http-check connect
+  http-check send meth $httpchk_method uri $httpchk_uri ver HTTP/1.1 hdr host $httpchk_host
+  http-check expect status 200
 """)
 
-backend_conf_plus = Template("""
-    server $name-$index $host:$port $cookies check
+backend_conf_hosts = Template("""
+  server $name-$index $host:$port $cookies check
 """)
 
 health_conf = """
-listen default
+listen healthz
   bind *:4242
 """
 
-backend_conf = backend_conf.substitute(
-    backend=BACKEND_NAME,
-    mode=BACKENDS_MODE,
-    balance=BALANCE,
-    inter=INTER,
-    fastinter=FAST_INTER,
-    downinter=DOWN_INTER,
-    fall=FALL,
-    rise=RISE,
-    cookies_name=COOKIES_NAME,
-    cookies_params=COOKIES_PARAMS
-)
-
-if BACKENDS_MODE == 'http':
-    backend_conf += backend_type_http.substitute(
-        httpchk=HTTPCHK,
-        httpchk_host=HTTPCHK_HOST
-    )
-
-################################################################################
-# Backends are resolved using internal or external DNS service
-################################################################################
-if sys.argv[1] == "dns":
-    ips = {}
-    for index, backend_server in enumerate(BACKENDS):
-        server_port = backend_server.split(':')
-        host = server_port[0]
-        port = server_port[1] if len(server_port) > 1 else BACKENDS_PORT
-
-        try:
-            records = subprocess.check_output(["getent", "hosts", host])
-        except Exception as err:
-            print(err)
-        else:
-            for record in records.splitlines():
-                ip = record.split()[0].decode()
-                ips[ip] = (host, port)
-
-    with open('/etc/haproxy/dns.backends', 'w') as bfile:
-        bfile.write(' '.join(sorted(ips)))
-
-    for ip, (host, port) in ips.items():
-        backend_conf += backend_conf_plus.substitute(
-            name=host.replace(".", "-"),
-            index=ip.replace(".", "-"),
-            host=ip,
-            port=port,
-            cookies=cookies.replace('@@value@@', ip))
-
-################################################################################
-# Backends provided via BACKENDS environment variable
-################################################################################
-
-elif sys.argv[1] == "env":
-    for index, backend_server in enumerate(BACKENDS):
-        server_port = backend_server.split(':')
-        host = server_port[0]
-        port = server_port[1] if len(server_port) > 1 else BACKENDS_PORT
-        backend_conf += backend_conf_plus.substitute(
-                name=host.replace(".", "-"),
-                index=index,
-                host=host,
-                port=port,
-                cookies=cookies.replace('@@value@@', host))
-
-################################################################################
-# Look for backend within /etc/hosts
-################################################################################
-
-elif sys.argv[1] == "hosts":
-    try:
-        hosts = open("/etc/hosts")
-    except:
-        exit(0)
-
-    index = 1
-    localhost = socket.gethostbyname(socket.gethostname())
-    existing_hosts = set()
-
-    #BBB
-    if ';' in SERVICE_NAMES:
-        service_names = SERVICE_NAMES.split(';')
-    else:
-        service_names = SERVICE_NAMES.split()
-
-    for host in hosts:
-        if "0.0.0.0" in host:
-            continue
-        if "127.0.0.1" in host:
-            continue
-        if localhost in host:
-            continue
-        if "::" in host:
-            continue
-
-        part = host.split()
-        if len(part) < 2:
-            continue
-
-        (host_ip, host_name) = part[0:2]
-        if host_ip in existing_hosts:
-            continue
-
-        if service_names and not any(name in host_name for name in service_names):
-            continue
-
-        existing_hosts.add(host_ip)
-        host_port = BACKENDS_PORT
-        backend_conf += backend_conf_plus.substitute(
-                name='http-server',
-                index=index,
-                host=host_ip,
-                port=host_port,
-                cookies=cookies.replace('@@value@@', host_ip)
-        )
-        index += 1
-
-    with open('/etc/haproxy/hosts.backends', 'w') as bfile:
-        bfile.write(' '.join(sorted(existing_hosts)))
-
-if PROXY_PROTOCOL_ENABLED:
-    accept_proxy = "accept-proxy"
-else:
-    accept_proxy = ""
-
+## Open the config file for writing
 with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
     with open("/tmp/haproxy.cfg", "r") as default:
         conf = Template(default.read())
@@ -239,15 +119,98 @@ with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
         )
     )
 
-    configuration.write(
-        frontend_conf.substitute(
-            name=FRONTEND_NAME,
-            port=FRONTEND_PORT,
-            mode=FRONTEND_MODE,
-            backend=BACKEND_NAME,
-            accept_proxy=accept_proxy
-        )
-    )
-
-    configuration.write(backend_conf)
+    ### Write Health
     configuration.write(health_conf)
+
+
+    ################################################################################
+    # Add the provided backends
+    ################################################################################
+
+    # Open DNS backends file
+    backend_info = {}
+    with open('/etc/haproxy/dns.backends', 'w') as bfile:
+
+        for index in range(1, BACKEND_POOLS + 1):
+            ips = {}
+            host = os.environ.get(f"BACKEND{index}_HOST", "")
+            name = os.environ.get(f"BACKEND{index}_NAME", f"backend-{host}")
+            port = os.environ.get(f"BACKEND{index}_PORT", BACKEND_PORT)
+            mode = os.environ.get(f"BACKEND{index}_MODE", BACKEND_MODE)
+            balance = os.environ.get(f"BACKEND{index}_BALANCE", BACKEND_BALANCE)
+            default_server = os.environ.get(f"BACKEND{index}_DEFAULT_SERVER", BACKEND_DEFAULT_SERVER)
+            backend_info[index] = (host, name, mode)
+
+            # Logging
+            print(f"[HAProxy] Adding backend {name} with mode {mode} and bind to hostname {host}:{port}")
+
+            # Substitute template for backend with correct values
+            backend_conf = base_backend_conf.substitute(
+                backend=name,
+                mode=mode,
+                default_server=default_server,
+                balance=balance,
+                cookies_name=COOKIES_NAME,
+                cookies_params=COOKIES_PARAMS
+            )
+
+            # Add http check when http mode is used for this backend
+            if mode == 'http':
+                backend_conf += backend_type_http.substitute(
+                    httpchk_method=HTTPCHK_METHOD,
+                    httpchk_uri=HTTPCHK_URI,
+                    httpchk_host=HTTPCHK_HOST
+                )
+
+            # Retrieve the host names
+            try:
+                records = subprocess.check_output(["getent", "hosts", host])
+            except Exception as err:
+                print(err)
+            else:
+                for record in records.splitlines():
+                    ip = record.split()[0].decode()
+                    ips[ip] = (host, port)
+
+            # Write ips to file to keep track of changes
+            bfile.write(' '.join(sorted(ips)))
+
+            # Get base backend conf, and add hosts to it
+            for ip, (host, port) in ips.items():
+                backend_conf += backend_conf_hosts.substitute(
+                    name=host.replace(".", "-"),
+                    index=ip.replace(".", "-"),
+                    host=ip,
+                    port=port,
+                    cookies=cookies.replace('@@value@@', ip))
+
+            # Write current backend
+            configuration.write(backend_conf)
+
+    ################################################################################
+    # Add the provided frontend
+    ################################################################################
+
+    for index in range(1, FRONTEND_POOLS + 1):
+        port = os.environ.get(f"FRONTEND{index}_PORT")
+        mode = os.environ.get(f"FRONTEND{index}_MODE", backend_info[index][2])
+        backend = os.environ.get(f"FRONTEND{index}_BACKEND", backend_info[index][1])
+        name = os.environ.get(f"FRONTEND{index}_NAME", f"frontend-{backend_info[index][0]}")
+
+        # Logging
+        print(f"[HAProxy] Adding frontend {name} with mode {mode} and bind to backend {backend} and port {port}")
+
+        if PROXY_PROTOCOL_ENABLED:
+            accept_proxy = "accept-proxy"
+        else:
+            accept_proxy = ""
+
+            configuration.write(
+                frontend_conf.substitute(
+                    name=name,
+                    port=port,
+                    mode=mode,
+                    backend=backend,
+                    accept_proxy=accept_proxy
+                )
+            )

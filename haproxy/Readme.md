@@ -1,45 +1,30 @@
 ## HAProxy Docker image
 
-This image is generic, thus you can obviously re-use it within
-your non-related EEA projects.
+This image is generic and can be used on other projects. This version is based on the initial work provided
+of this image: [hub.docker.com/r/eecms/haproxy](https://hub.docker.com/r/eeacms/haproxy)
 
- - Debian: **Buster**
- - HAProxy: **1.8**
- - Expose: **5000**
-
+ - Debian: **Bookworm**
+ - HAProxy: **3.0**
+ 
 ### Supported tags and respective Dockerfile links
 
-  - `:latest` [*Dockerfile*](https://github.com/eea/eea.docker.haproxy/blob/master/haproxy/Dockerfile) - Debian: **Buster**, HAProxy: **1.8**
+  - `:latest` [*Dockerfile*](https://github.com/mapgear/oss-haproxy-dns/blob/master/haproxy/Dockerfile) - Debian: **Bookworm**, HAProxy: **3.0**
 
 ### Stable and immutable tags
 
-  - `:1.8-1.8` [*Dockerfile*](https://github.com/eea/eea.docker.haproxy/tree/1.8-1.8/haproxy/Dockerfile) - HAProxy: **1.8.31** Release: **1.8**
-  - `:1.8-1.7` [*Dockerfile*](https://github.com/eea/eea.docker.haproxy/tree/1.8-1.7/haproxy/Dockerfile) - HAProxy: **1.8.30** Release: **1.7**
-  - `:1.8-1.6` [*Dockerfile*](https://github.com/eea/eea.docker.haproxy/tree/1.8-1.6/haproxy/Dockerfile) - HAProxy: **1.8.29** Release: **1.6**
-  - `:1.8-1.5` [*Dockerfile*](https://github.com/eea/eea.docker.haproxy/tree/1.8-1.5/haproxy/Dockerfile) - HAProxy: **1.8.22** Release: **1.5**
+  - `:3.0` [*Dockerfile*](https://github.com/mapgear/oss-haproxy-dns/tree/3.0/haproxy/Dockerfile) - HAProxy: **3.0** Release: **3.0**
 
 
-See [older versions](https://github.com/eea/eea.docker.haproxy/releases)
-
+See [all versions](https://github.com/mapgear/oss-haproxy-dns/releases)
 
 ### Changes
 
- - [CHANGELOG.md](https://github.com/eea/eea.docker.haproxy/blob/master/CHANGELOG.md)
-
-### Base docker image
-
- - [hub.docker.com](https://hub.docker.com/r/eeacms/haproxy)
-
+ - [CHANGELOG.md](https://github.com/mapgear/oss-haproxy-dns/blob/master/CHANGELOG.md)
 
 ### Source code
 
-  - [github.com](http://github.com/eea/eea.docker.haproxy)
+  - [github.com](http://github.com/mapgear/oss-haproxy-dns)
 
-
-### Installation
-
-1. Install [Docker](https://www.docker.com/)
-2. Install [Docker Compose](https://docs.docker.com/compose/install/).
 
 ## Usage
 
@@ -51,19 +36,20 @@ Here is a basic example of a `docker-compose.yml` file using the `eeacms/haproxy
     version: "2"
     services:
       haproxy:
-        image: eeacms/haproxy
+        image: mapgear/haproxy-dns
         depends_on:
-        - webapp
+        - nginx
         ports:
-        - "80:5000"
+        - "80:80"
         - "1936:1936"
         environment:
-          BACKENDS: "webapp"
-          DNS_ENABLED: "true"
+          FRONTEND1_PORT: 80
+          BACKEND1_PORT: 5000
+          BACKEND1_HOST: nginx
           LOG_LEVEL: "info"
 
-      webapp:
-        image: eeacms/hello
+      nginx:
+        image: nginx
 
 
 The application can be scaled to use more server instances, with `docker-compose scale`:
@@ -80,23 +66,6 @@ Note that it may take **up to one minute** until backends are plugged-in due to 
 minimum possible `DNS_TTL`.
 
 
-### Run with backends specified as environment variable
-
-    $ docker run --env BACKENDS="192.168.1.5:80 192.168.1.6:80" eeacms/haproxy
-
-Using the `BACKENDS` variable is a way to quick-start the container.
-The servers are written as `server_ip:server_listening_port`,
-separated by spaces (and enclosed in quotes, to avoid issues).
-The contents of the variable are evaluated in a python script that writes
-the HAProxy configuration file automatically.
-
-If there are multiple DNS records for one or more of your `BACKENDS` (e.g. when deployed using rancher-compose),
-you can use `DNS_ENABLED` environment variable. This way, haproxy will load-balance
-all of your backends instead of only the first entry found:
-
-  $ docker run --link=webapp -e BACKENDS="webapp" -e DNS_ENABLED=true eeacms/haproxy
-
-
 ### Use a custom configuration file mounted as a volume
 
     $ docker run -v conf.d/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg eeacms/haproxy:latest
@@ -107,18 +76,6 @@ If you edit `haproxy.cfg` you can reload it without having to restart the contai
     $ docker exec <name-of-your-container> reload
 
 
-### Extend the image with a custom haproxy.cfg file
-
-Additionally, you can supply your own static `haproxy.cfg` file by extending the image
-
-    FROM eeacms/haproxy:latest
-    COPY conf.d/haproxy.cfg /usr/local/etc/haproxy/haproxy.cfg
-
-    RUN apt-get install...
-
-and then run
-
-    $ docker build -t your-image-name:your-image-tag path/to/Dockerfile
 
 ## Supported environment variables ##
 
@@ -128,35 +85,57 @@ combination with others (for example with [Docker Compose](https://docs.docker.c
 HAProxy can be configured by modifying the following env variables,
 either when running the container or in a `docker-compose.yml` file.
 
+## Frontend configuration
+This image allows the generation of multiple frontend pools
+
+### Global frontend settings
+  * `FRONTEND_POOLS` The number of frontend pools, default to 1
+  * `FRONTEND_MODE` The mode for all the frontend pools. If not set, `BACKEND_MODE` is used as default
+
+### Frontend pools
+Per frontend pool, the following settings can be configured:
+  * `FRONTEND1_NAME` The name of the frontend pool. If not set, the name of the backend pool is used
+  * `FRONTEND1_PORT` The port of the frontend pool. Must be set per pool, as no default port can be deduced from config
+  * `FRONTEND1_BACKEND` The name of the default backend pool for this frontend. If not set, the backend pool on the same index is used, e.g. `BACKEND3` for `FRONTEND3`
+
+
+## Backend configuration
+This docker image allows the generation of multiple backend pools.
+
+#### Global Backend Settings
+  * `BACKEND_POOLS` The number of backend pools. If not set, `FRONTEND_POOLS` is used so the same amount of frontend- and backend pools are created.
+  * `BACKEND_PORT` The default port for all backend pools. If not set, it defaults to 5000
+  * `BACKEND_MODE` The default mode for all backend pools
+  * `BACKEND_BALANCE` The default balance algorithm. If not provided, defaults to `roundrobin`
+  * `BACKEND_DEFAULT_SERVER` The default server options for all backend pools. Default is `inter 2s fastinter 2s downinter 2s fall 3 rise 2`. Check [https://docs.haproxy.org/2.4/configuration.html#5.2] for all the available options.
+
+#### Backend pools
+For every backend pool, a set of environment variables can be created. In the following variables, the number 1 need to be replaced per backend pool. Index starts at 1, and continues up till the number of `BACKEND_POOLS`.
+
+The available options per pool are:
+  * `BACKEND1_HOST` Host name of the servers to detect
+  * `BACKEND1_NAME` Optional name of the backend in haproxy. If not set, `BACKEND1_HOST` is used as name
+  * `BACKEND1_PORT` The port of the backend servers.
+  * `BACKEND1_MODE` The mode of the backend servers, either `http` or `tcp`
+  * `BACKEND1_DEFAULT_SERVER` Default server parameters, which are applied to all backend servers in this pool
+
+
+## Other settings
   * `STATS_PORT` The port to bind statistics to - default `1936`
   * `STATS_AUTH` The authentication details (written as `user:password` for the statistics page - default `admin:admin`
-  * `FRONTEND_NAME` The label of the frontend - default `http-frontend`
-  * `FRONTEND_PORT` The port to bind the frontend to - default `5000`
-  * `FRONTEND_MODE` Frontend mode - default `http` or `BACKENDS_MODE` if declared
   * `PROXY_PROTOCOL_ENABLED` The option to enable or disable accepting proxy protocol (`true` stands for enabled, `false` or anything else for disabled) - default `false`
   * `COOKIES_ENABLED` The option to enable or disable cookie-based sessions (`true` stands for enabled, `false` or anything else for disabled) - default `false`
   * `COOKIES_NAME` Will be added on cookie declaration - default `SRV_ID`
   * `COOKIES_PARAMS` Will be added on cookie declaration - example `indirect nocache maxidle 30m maxlife 8h` or `maxlife 24h` - documentation https://cbonte.github.io/haproxy-dconv/1.8/configuration.html#4-cookie
-  * `BACKEND_NAME` The label of the backend - default `http-backend`
-  * `BACKENDS` The list of `server_ip:server_listening_port` to be load-balanced by HAProxy, separated by space - by default it is not set
-  * `BACKENDS_PORT` Port to use when auto-discovering backends, or when `BACKENDS` are specified without port - by default `80`
-  * `BACKENDS_MODE` Backends mode - default `http` or `FRONTEND_MODE` if declared
-  * `BALANCE` The algorithm used for load-balancing - default `roundrobin`
-  * `SERVICE_NAMES` An optional prefix for services to be included when discovering services separated by space. - by default it is not set
   * `LOGGING` Override logging ip address:port - default is udp `127.0.0.1:514` inside container
   * `LOG_LEVEL` Set haproxy log level, default is `notice` ( only send important events ). Can be: `emerg`,`alert`,`crit`,`err`,`warning`,`notice`,`info`,`debug`
-  * `DNS_ENABLED` DNS lookup provided `BACKENDS`. Use this option when your backends are resolved by an internal/external DNS service (e.g. **Docker 1.11+**, **Rancher**)
   * `DNS_TTL` DNS lookup backends every `DNS_TTL` minutes. Default `1` minute.
   * `TIMEOUT_CONNECT` the maximum time to wait for a connection attempt to a VPS to succeed. Default `5000` ms
   * `TIMEOUT_CLIENT` timeouts apply when the client is expected to acknowledge or send data during the TCP process. Default `50000` ms
   * `TIMEOUT_SERVER` timeouts apply when the server is expected to acknowledge or send data during the TCP process. Default `50000` ms
-  * `HTTPCHK` The HTTP method and uri used to check on the servers health - default `HEAD /`
+  * `HTTPCHK_METHOD` The HTTP method used to check the servers health - default `HEAD`
+  * `HTTPCHK_URI` The HTTP uri used to check on the servers health - default `/`
   * `HTTPCHK_HOST` Host Header override on http Health Check - default `localhost`
-  * `INTER` parameter sets the interval between two consecutive health checks. If not specified, the default value is `2s`
-  * `FAST_INTER` parameter sets the interval between two consecutive health checks when the server is any of the transition state (read above): UP - transitionally DOWN or DOWN - transitionally UP. If not set, then `INTER` is used.
-  * `DOWN_INTER` parameter sets the interval between two consecutive health checks when the server is in the DOWN state. If not set, then `INTER` is used.
-  * `RISE` number of consecutive valid health checks before considering the server as UP. Default value is `2`
-  * `FALL` number of consecutive invalid health checks before considering the server as DOWN. Default value is `3`
 
 
 ## Logging
