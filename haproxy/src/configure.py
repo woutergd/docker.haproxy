@@ -43,7 +43,12 @@ listen stats
   stats enable
   stats uri /
   stats hide-version
+  stats refresh 10s
   stats auth $auth
+""")
+
+stats_scope_conf = Template("""
+  stats scope $scope
 """)
 
 frontend_conf = Template("""
@@ -87,7 +92,7 @@ backend_type_http = Template("""
   option httpchk
   http-check connect
   http-check send meth $httpchk_method uri $httpchk_uri ver HTTP/1.1 hdr host $httpchk_host
-  http-check expect status 200
+  http-check expect status 200-399
 """)
 
 backend_conf_hosts = Template("""
@@ -100,6 +105,7 @@ listen healthz
 """
 
 ## Open the config file for writing
+stats_scope = []
 with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
     with open("/tmp/haproxy.cfg", "r") as default:
         conf = Template(default.read())
@@ -112,12 +118,6 @@ with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
         )
 
         configuration.write(conf)
-
-    configuration.write(
-        listen_conf.substitute(
-            port=STATS_PORT, auth=STATS_AUTH
-        )
-    )
 
     ### Write Health
     configuration.write(health_conf)
@@ -140,6 +140,9 @@ with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
             balance = os.environ.get(f"BACKEND{index}_BALANCE", BACKEND_BALANCE)
             default_server = os.environ.get(f"BACKEND{index}_DEFAULT_SERVER", BACKEND_DEFAULT_SERVER)
             backend_info[index] = (host, name, mode)
+
+            # Add to stats page
+            stats_scope.append(name)
 
             # Logging
             print(f"[HAProxy] Adding backend {name} with mode {mode} and bind to hostname {host}:{port}")
@@ -197,6 +200,9 @@ with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
         backend = os.environ.get(f"FRONTEND{index}_BACKEND", backend_info[index][1])
         name = os.environ.get(f"FRONTEND{index}_NAME", f"frontend-{backend_info[index][0]}")
 
+        # Add to stats page
+        stats_scope.append(name)
+    
         # Logging
         print(f"[HAProxy] Adding frontend {name} with mode {mode} and bind to backend {backend} and port {port}")
 
@@ -214,3 +220,15 @@ with open("/usr/local/etc/haproxy/haproxy.cfg", "w") as configuration:
                     accept_proxy=accept_proxy
                 )
             )
+
+    # Write stats with the scopes of created frontends and backends
+    configuration.write(
+        listen_conf.substitute(
+            port=STATS_PORT, 
+            auth=STATS_AUTH,
+        )
+    )
+
+    # Write scopes
+    for scope in stats_scope:
+        configuration.write(stats_scope_conf.substitute(scope=scope))

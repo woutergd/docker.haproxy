@@ -7,22 +7,22 @@ This image is generic and can be used on other projects. This version is based o
  
 ### Supported tags and respective Dockerfile links
 
-  - `:latest` [*Dockerfile*](https://github.com/mapgear/docker.haproxy/blob/master/haproxy/Dockerfile) - Debian: **Bookworm**, HAProxy: **3.0**
+  - `:latest` [*Dockerfile*](https://github.com/woutergd/docker.haproxy/blob/master/haproxy/Dockerfile) - Debian: **Bookworm**, HAProxy: **3.0**
 
 ### Stable and immutable tags
 
-  - `:3.0` [*Dockerfile*](https://github.com/mapgear/docker.haproxy/tree/3.0/haproxy/Dockerfile) - HAProxy: **3.0** Release: **3.0**
+  - `:3.0` [*Dockerfile*](https://github.com/woutergd/docker.haproxy/tree/3.0/haproxy/Dockerfile) - HAProxy: **3.0** Release: **3.0**
 
 
-See [all versions](https://github.com/mapgear/docker.haproxy/releases)
+See [all versions](https://github.com/woutergd/docker.haproxy/releases)
 
 ### Changes
 
- - [CHANGELOG.md](https://github.com/mapgear/docker.haproxy/blob/master/CHANGELOG.md)
+ - [CHANGELOG.md](https://github.com/woutergd/docker.haproxy/blob/master/CHANGELOG.md)
 
 ### Source code
 
-  - [github.com](http://github.com/mapgear/oss-haproxy-dns)
+  - [github.com](http://github.com/woutergd/oss-haproxy-dns)
 
 
 ## Usage

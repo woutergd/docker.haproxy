@@ -1,6 +1,6 @@
 services:
   haproxy:
-    image: haproxy-dns
+    image: wgoedhart/docker.haproxy:3.0
     depends_on:
     - nginx_a
     - nginx_b
